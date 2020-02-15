@@ -9,7 +9,8 @@ import pdb
 import matplotlib.pyplot as plt
 import librosa.display
 import madmom
-import IPython.display as ipd
+from scipy.spatial import distance
+from numpy import linalg as LA
 
 LEFT, RIGHT, STAY = -1, 1, 0
 
@@ -95,7 +96,8 @@ pdb.set_trace()
 # compute music affinity matrix
 mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc, lifter=lifter, hop_length=hop_length)
 R = librosa.segment.recurrence_matrix(mfcc, sym=True)
-R_aff = librosa.segment.recurrence_matrix(mfcc, mode='affinity')
+R_aff = librosa.segment.recurrence_matrix(mfcc, mode='affinity', sym=True)
+R_aff *= 1.0 / R_aff.max()    # normalize it
 
 # how much does a timesecond correspond to in the matrix
 s = R.shape[0]
@@ -111,7 +113,8 @@ np.fill_diagonal(sa_matrix, 1)
 for i in range(s):
     for j in range(i):
         sa_matrix[i][j] = sa_matrix[j][i] = getval(state_action[i], state_action[j])
-
+sa_aff = np.transpose(sa_matrix)
+sa_aff *= 1.0 / sa_aff.max()    # normalize it
 
 # display music affinity matrix along with state action matrix
 plt.figure(figsize=(8, 4))
@@ -120,7 +123,20 @@ librosa.display.specshow(R_aff, x_axis='time', y_axis='time',
                          hop_length=hop_length, cmap='magma_r')
 plt.title('Affinity recurrence')
 plt.subplot(1, 2, 2)
-librosa.display.specshow(np.transpose(sa_matrix), x_axis='time', y_axis='time', hop_length=hop_length)
+librosa.display.specshow(sa_aff, x_axis='time', y_axis='time', hop_length=hop_length)
 plt.title('State-action recurrence')
 plt.tight_layout()
 plt.show()
+
+# Compute similarity between matrices using eiegenvectors
+_, music_evectors = LA.eig(R_aff)
+_, sa_evectors = LA.eig(sa_aff)
+
+dists = np.array([])
+for idx in range(music_evectors.shape[0]):
+    mvector = np.real(music_evectors[idx])
+    dvector = np.real(sa_evectors[idx])
+    dists = np.append(dists, distance.cosine(mvector, dvector))
+
+reward = np.mean(dists) * -1
+print("Reward = ", reward)
